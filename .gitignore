@@ -1,0 +1,26 @@
+# Arquivos de credenciais e tokens
+client_secret.json
+token.json
+
+# Arquivos gerados
+video_ids.txt
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambiente virtual Python
+venv/
+env/
+ENV/
+
+# Arquivos de sistema
+.DS_Store
+.env
+
+# IDEs e editores
+.idea/
+.vscode/
+*.swp
+*.swo
