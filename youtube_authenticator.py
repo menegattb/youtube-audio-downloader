@@ -28,53 +28,46 @@ class YouTubeAuthenticator:
         """
         self.client_secrets_file = client_secrets_file
         self.token_file = token_file
-
-    def get_authenticated_service(self):
+        self._credentials = None
+        
+    def get_credentials(self):
         """
-        Authenticate and build the YouTube API service.
+        Get valid credentials for YouTube API access.
+        Handles token refresh and new authentication flow if necessary.
         
         Returns:
-            googleapiclient.discovery.Resource: An authenticated YouTube API service object
-        
-        Raises:
-            FileNotFoundError: If client_secret.json is not found
-            Exception: For other authentication-related errors
+            google.oauth2.credentials.Credentials: Valid credentials for API access
         """
-        credentials = None
-
-        # Load existing credentials if they exist
+        if self._credentials and self._credentials.valid:
+            return self._credentials
+            
+        # Check if we have stored token
         if os.path.exists(self.token_file):
-            print("Loading existing credentials...")
-            credentials = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
-
-        # If no valid credentials are available, refresh or get new ones
-        if not credentials or not credentials.valid:
-            if credentials and credentials.expired and credentials.refresh_token:
-                print("Refreshing expired credentials...")
-                credentials.refresh(Request())
-            else:
-                if not os.path.exists(self.client_secrets_file):
-                    raise FileNotFoundError(
-                        f"Client secrets file not found: {self.client_secrets_file}\n"
-                        "Please obtain it from the Google Cloud Console and save it as "
-                        "'client_secret.json' in the same directory."
-                    )
-
-                print("Starting new OAuth 2.0 authorization flow...")
-                print("A browser window will open for authentication.")
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.client_secrets_file, self.SCOPES
-                )
-                credentials = flow.run_local_server(port=8080)
-                print("Authentication successful!")
-
-            # Save the credentials for future runs
-            print("Saving credentials for future use...")
-            with open(self.token_file, 'w') as token:
-                token.write(credentials.to_json())
-
-        # Build and return the YouTube API service
-        print("Building YouTube API service...")
+            self._credentials = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
+            
+        # If credentials are expired but have refresh token, refresh them
+        if self._credentials and self._credentials.expired and self._credentials.refresh_token:
+            self._credentials.refresh(Request())
+            
+        # If no valid credentials available, run the OAuth flow
+        if not self._credentials or not self._credentials.valid:
+            flow = InstalledAppFlow.from_client_secrets_file(self.client_secrets_file, self.SCOPES)
+            self._credentials = flow.run_local_server(port=0)
+            
+        # Save the credentials for future use
+        with open(self.token_file, 'w') as token:
+            token.write(self._credentials.to_json())
+            
+        return self._credentials
+        
+    def get_youtube_service(self):
+        """
+        Get an authenticated YouTube API service instance.
+        
+        Returns:
+            googleapiclient.discovery.Resource: Authenticated YouTube API service
+        """
+        credentials = self.get_credentials()
         return build('youtube', 'v3', credentials=credentials)
 
 if __name__ == '__main__':
