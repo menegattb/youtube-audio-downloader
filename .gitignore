@@ -1,9 +1,25 @@
 # Arquivos de credenciais e tokens
 client_secret.json
 token.json
+cookies.txt
+
+# Arquivos de dados do YouTube (contêm URLs e metadados sensíveis)
+playlists_metadata.json
+playlist_videos.json
+playlist_names.json
+playlist_progress.json
+individual_videos.json
+unique_individual_videos.json
+video_urls.txt
+unique_video_urls.txt
+playlist_urls.txt
+filtered_playlist_urls.txt
+excluded_playlists.json
 
 # Arquivos gerados
 video_ids.txt
+downloads/
+*.log
 
 # Cache Python
 __pycache__/
@@ -14,6 +30,7 @@ __pycache__/
 venv/
 env/
 ENV/
+.venv/
 
 # Arquivos de sistema
 .DS_Store
@@ -24,3 +41,11 @@ ENV/
 .vscode/
 *.swp
 *.swo
+
+# Arquivos de backup
+*_backup.py
+*_backup.*
+
+# Arquivos temporários
+*.tmp
+*.temp

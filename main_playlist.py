@@ -1,224 +1,298 @@
 #!/usr/bin/env python3
-from playlists.playlist_downloader import PlaylistDownloader
-from youtube_authenticator import YouTubeAuthenticator
-import json
+"""
+Sistema principal de gerenciamento de playlists do YouTube
+Com sistema de interrupção graciosa
+"""
+
+import sys
 from pathlib import Path
-import time
 
-def fetch_all_playlists(youtube):
-    """Busca todas as playlists do canal e salva no arquivo de metadados"""
-    print("Buscando playlists do canal...")
-    
-    channel_id = "UCY2cdE2CjQEZGpC7ErNBjqQ"  # Canal Lama Padma Samten
-    playlists = []
-    next_page_token = None
-    
+# Adiciona o diretório raiz ao PYTHONPATH
+root_dir = Path(__file__).parent
+sys.path.append(str(root_dir))
+
+from playlists.playlist_downloader import PlaylistDownloader
+from update_youtube_data import YouTubeDataUpdater
+from graceful_interrupt import check_interrupt, reset_interrupt, cleanup_interrupt
+
+def show_menu():
+    """Exibe o menu principal"""
+    print("\n" + "="*60)
+    print("🎵 SISTEMA DE DOWNLOAD DE PLAYLISTS DO YOUTUBE")
+    print("="*60)
+    print("1. Sincronizar com YouTube (COMPLETO)")
+    print("2. Atualizar lista de playlists")
+    print("3. Atualizar links dos vídeos das playlists")
+    print("4. Atualizar vídeos individuais (MÉTODO MELHORADO)")
+    print("5. Listar todas as playlists")
+    print("6. Baixar todas as playlists")
+    print("7. Baixar uma playlist específica")
+    print("8. Retomar downloads incompletos")
+    print("9. Mostrar estatísticas")
+    print("10. Upload para repositório")
+    print("11. Sincronizar repositório")
+    print("0. Sair")
+    print("="*60)
+
+def get_user_choice():
+    """Obtém a escolha do usuário"""
     while True:
-        request = youtube.playlists().list(
-            part="snippet",
-            channelId=channel_id,
-            maxResults=50,
-            pageToken=next_page_token
-        )
-        response = request.execute()
-        
-        for item in response['items']:
-            playlist_info = {
-                'id': item['id'],
-                'title': item['snippet']['title'],
-                'description': item['snippet']['description']
-            }
-            playlists.append(playlist_info)
-        
-        next_page_token = response.get('nextPageToken')
-        if not next_page_token:
-            break
-        
-        time.sleep(1)  # Evita exceder limites da API
-    
-    # Salva os metadados das playlists e atualiza o arquivo de playlists
-    metadata_path = Path('playlists/playlists_metadata.json')
-    playlists_path = Path('playlists/playlists.txt')
-    metadata_path.parent.mkdir(exist_ok=True)
-    
-    # Salva os metadados em JSON
-    with open(metadata_path, 'w', encoding='utf-8') as f:
-        json.dump(playlists, f, indent=2, ensure_ascii=False)
-    
-    # Atualiza o arquivo de playlists em formato de texto
-    with open(playlists_path, 'w', encoding='utf-8') as f:
-        for playlist in playlists:
-            f.write(f"{playlist['id']}|{playlist['title']}\n")
-    
-    print(f"Total de playlists encontradas: {len(playlists)}")
-    return playlists
-
-def check_playlists_status(playlists, downloader):
-    """Verifica o status de todas as playlists e mostra um relatório"""
-    print("\nRelatório de Status das Playlists:")
-    print("=" * 50)
-    
-    total = len(playlists)
-    completed = 0
-    in_progress = 0
-    not_started = 0
-    failed = []
-    
-    for playlist in playlists:
-        playlist_id = playlist['id']
-        if playlist_id in downloader.progress['playlists']:
-            progress = downloader.progress['playlists'][playlist_id]
-            if progress['status'] == 'completed':
-                completed += 1
+        try:
+            choice = input("\nEscolha uma opção (0-11): ").strip()
+            if choice.isdigit() and 0 <= int(choice) <= 11:
+                return int(choice)
             else:
-                in_progress += 1
-                if progress.get('total_videos', 0) > 0:
-                    completed_videos = len(progress['downloaded_videos'])
-                    total_videos = progress['total_videos']
-                    if completed_videos < total_videos:
-                        failed.append({
-                            'title': playlist['title'],
-                            'completed': completed_videos,
-                            'total': total_videos,
-                            'id': playlist_id
-                        })
-        else:
-            not_started += 1
-    
-    print(f"Total de Playlists: {total}")
-    print(f"Concluídas: {completed}")
-    print(f"Em Progresso: {in_progress}")
-    print(f"Não Iniciadas: {not_started}")
-    
-    if failed:
-        print("\nPlaylists com downloads incompletos:")
-        for f in failed:
-            print(f"- {f['title']}")
-            print(f"  Progresso: {f['completed']}/{f['total']} vídeos")
-    
-    return failed
+                print("❌ Opção inválida. Digite um número entre 0 e 11.")
+        except KeyboardInterrupt:
+            print("\n\n🛑 Operação cancelada pelo usuário.")
+            return 0
 
-def main():
-    # 1. Autenticação
-    print("Iniciando processo de gerenciamento de playlists...")
-    authenticator = YouTubeAuthenticator()
-    youtube = authenticator.get_youtube_service()
+def sync_youtube_data():
+    """Sincroniza dados com YouTube"""
+    print("\n🔄 SINCRONIZAÇÃO COMPLETA COM YOUTUBE")
+    print("="*50)
     
-    # 2. Verifica se precisa atualizar metadados das playlists
-    metadata_path = Path('playlists/playlists_metadata.json')
-    if not metadata_path.exists():
-        print("Arquivo de metadados não encontrado. Buscando playlists...")
-        playlists = fetch_all_playlists(youtube)
-    else:
-        with open(metadata_path, 'r', encoding='utf-8') as f:
-            playlists = json.load(f)
-        print(f"Total de playlists carregadas: {len(playlists)}")
+    updater = YouTubeDataUpdater()
     
-    # 3. Opções do usuário
+    try:
+        print("1. Atualizando lista de playlists...")
+        updater.update_playlists()
+        
+        if check_interrupt():
+            print("🛑 Sincronização interrompida pelo usuário")
+            return
+        
+        print("2. Atualizando vídeos das playlists...")
+        updater.update_playlist_videos()
+        
+        if check_interrupt():
+            print("🛑 Sincronização interrompida pelo usuário")
+            return
+        
+        print("3. Atualizando vídeos individuais...")
+        updater.get_all_channel_videos()
+        
+        if check_interrupt():
+            print("🛑 Sincronização interrompida pelo usuário")
+            return
+        
+        print("4. Mostrando estatísticas...")
+        updater.show_statistics()
+        
+        print("\n✅ Sincronização completa finalizada!")
+        
+    except Exception as e:
+        print(f"❌ Erro durante sincronização: {e}")
+        import traceback
+        traceback.print_exc()
+
+def update_playlists():
+    """Atualiza lista de playlists"""
+    print("\n📋 ATUALIZANDO LISTA DE PLAYLISTS")
+    print("="*40)
+    
+    updater = YouTubeDataUpdater()
+    updater.update_playlists()
+
+def update_playlist_videos():
+    """Atualiza vídeos das playlists"""
+    print("\n🎬 ATUALIZANDO VÍDEOS DAS PLAYLISTS")
+    print("="*40)
+    
+    updater = YouTubeDataUpdater()
+    updater.update_playlist_videos()
+
+def update_individual_videos():
+    """Atualiza vídeos individuais"""
+    print("\n🎵 ATUALIZANDO VÍDEOS INDIVIDUAIS")
+    print("="*40)
+    
+    updater = YouTubeDataUpdater()
+    updater.get_all_channel_videos()
+
+def list_playlists():
+    """Lista todas as playlists"""
+    print("\n📋 LISTANDO TODAS AS PLAYLISTS")
+    print("="*40)
+    
+    updater = YouTubeDataUpdater()
+    updater.show_statistics()
+
+def download_all_playlists():
+    """Baixa todas as playlists"""
+    print("\n⬇️ BAIXANDO TODAS AS PLAYLISTS")
+    print("="*40)
+    print("💡 Dica: Pressione Ctrl+C para interromper graciosamente")
+    print("="*40)
+    
     downloader = PlaylistDownloader()
     
-    # Mostra status inicial
-    failed_playlists = check_playlists_status(playlists, downloader)
+    try:
+        downloader.download_all_playlists()
+    except KeyboardInterrupt:
+        print("\n🛑 Download interrompido pelo usuário")
+    finally:
+        downloader.cleanup()
 
-    while True:
-        print("\nGerenciamento de Playlists")
-        print("1. Atualizar lista de playlists")
-        print("2. Listar todas as playlists")
-        print("3. Buscar playlist por nome")
-        print("4. Baixar uma playlist específica")
-        print("5. Baixar todas as playlists")
-        print("6. Baixar várias playlists da lista")
-        print("7. Retomar downloads incompletos")
-        print("8. Verificar status das playlists")
-        print("9. Sair")
+def download_specific_playlist():
+    """Baixa uma playlist específica"""
+    print("\n🎯 BAIXANDO PLAYLIST ESPECÍFICA")
+    print("="*40)
+    
+    # Lista playlists disponíveis
+    updater = YouTubeDataUpdater()
+    playlists = updater.get_playlists()
+    
+    if not playlists:
+        print("❌ Nenhuma playlist encontrada. Execute a sincronização primeiro.")
+        return
+    
+    print("\nPlaylists disponíveis:")
+    for i, playlist in enumerate(playlists[:20], 1):  # Mostra apenas as primeiras 20
+        print(f"{i}. {playlist['title']} ({playlist['itemCount']} vídeos)")
+    
+    if len(playlists) > 20:
+        print(f"... e mais {len(playlists) - 20} playlists")
+    
+    try:
+        choice = input(f"\nEscolha uma playlist (1-{min(20, len(playlists))}): ").strip()
+        if not choice.isdigit():
+            print("❌ Opção inválida")
+            return
         
-        choice = input("\nEscolha uma opção (1-9): ")
+        choice_idx = int(choice) - 1
+        if 0 <= choice_idx < min(20, len(playlists)):
+            selected_playlist = playlists[choice_idx]
+            print(f"\nBaixando: {selected_playlist['title']}")
+            
+            downloader = PlaylistDownloader()
+            try:
+                downloader.download_playlist(selected_playlist['id'], selected_playlist['title'])
+            finally:
+                downloader.cleanup()
+        else:
+            print("❌ Opção inválida")
+    
+    except KeyboardInterrupt:
+        print("\n🛑 Operação cancelada pelo usuário")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+
+def resume_downloads():
+    """Retoma downloads incompletos"""
+    print("\n🔄 RETOMANDO DOWNLOADS INCOMPLETOS")
+    print("="*40)
+    print("💡 Dica: Pressione Ctrl+C para interromper graciosamente")
+    print("="*40)
+    
+    downloader = PlaylistDownloader()
+    
+    try:
+        downloader.resume_incomplete_downloads()
+    except KeyboardInterrupt:
+        print("\n🛑 Retomada interrompida pelo usuário")
+    finally:
+        downloader.cleanup()
+
+def show_statistics():
+    """Mostra estatísticas"""
+    print("\n📊 ESTATÍSTICAS DO SISTEMA")
+    print("="*40)
+    
+    updater = YouTubeDataUpdater()
+    updater.show_statistics()
+
+def upload_to_repository():
+    """Upload para repositório"""
+    print("\n📤 UPLOAD PARA REPOSITÓRIO")
+    print("="*40)
+    print("Escolha uma opção:")
+    print("1. Upload simples (todas as playlists)")
+    print("2. Upload em lotes")
+    print("3. Reverter uploads")
+    
+    try:
+        choice = input("Escolha (1-3): ").strip()
         
         if choice == "1":
-            playlists = fetch_all_playlists(youtube)
+            import subprocess
+            subprocess.run([sys.executable, "upload_simple.py"])
         elif choice == "2":
-            print("\nLista de todas as playlists:")
-            for i, playlist in enumerate(playlists, 1):
-                print(f"{i}. {playlist['title']}")
+            import subprocess
+            subprocess.run([sys.executable, "upload_batch.py"])
         elif choice == "3":
-            search = input("\nDigite o termo de busca: ").lower()
-            found = False
-            for playlist in playlists:
-                if search in playlist['title'].lower():
-                    print(f"\nID: {playlist['id']}")
-                    print(f"Título: {playlist['title']}")
-                    print(f"Descrição: {playlist['description']}")
-                    found = True
-            if not found:
-                print("Nenhuma playlist encontrada com esse termo.")
-        elif choice == "4":
-            search = input("\nDigite o termo para buscar a playlist desejada: ").lower()
-            matching_playlists = []
-            for i, playlist in enumerate(playlists):
-                if search in playlist['title'].lower():
-                    matching_playlists.append((i+1, playlist))
-            
-            if not matching_playlists:
-                print("Nenhuma playlist encontrada com esse termo.")
-                continue
-            
-            print("\nPlaylists encontradas:")
-            for num, playlist in matching_playlists:
-                print(f"{num}. {playlist['title']}")
-            
-            try:
-                selection = int(input("\nDigite o número da playlist para baixar (0 para cancelar): "))
-                if selection == 0:
-                    continue
-                
-                for num, playlist in matching_playlists:
-                    if num == selection:
-                        print(f"\nIniciando download da playlist: {playlist['title']}")
-                        downloader.download_playlist(playlist['id'], playlist['title'])
-                        break
-            except ValueError:
-                print("Por favor, digite um número válido.")
-        elif choice == "5":
-            print("\nIniciando download de todas as playlists...")
-            downloader.download_all_playlists()
-        elif choice == "6":
-            print("\nLista de todas as playlists:")
-            for i, playlist in enumerate(playlists, 1):
-                print(f"{i}. {playlist['title']}")
-            
-            try:
-                selections = input("\nDigite os números das playlists para baixar (separados por espaço): ").split()
-                selections = [int(s) for s in selections if s.isdigit() and 1 <= int(s) <= len(playlists)]
-                
-                if not selections:
-                    print("Nenhum número válido fornecido.")
-                    continue
-                
-                print(f"\nBaixando {len(selections)} playlists:")
-                for num in selections:
-                    playlist = playlists[num-1]
-                    print(f"\nIniciando download da playlist: {playlist['title']}")
-                    downloader.download_playlist(playlist['id'], playlist['title'])
-                    
-            except ValueError:
-                print("Por favor, digite números válidos separados por espaço.")
-        elif choice == "7":
-            print("\nRetomando downloads incompletos...")
-            for playlist in failed_playlists:
-                print(f"\nIniciando download da playlist: {playlist['title']}")
-                downloader.download_playlist(playlist['id'], playlist['title'])
-            
-            # Atualiza o status após retomar downloads
-            failed_playlists = check_playlists_status(playlists, downloader)
-        elif choice == "8":
-            # Verifica o status das playlists
-            print("\nVerificando status das playlists...")
-            failed_playlists = check_playlists_status(playlists, downloader)
-        elif choice == "9":
-            print("Encerrando...")
-            break
+            import subprocess
+            subprocess.run([sys.executable, "revert_uploads.py"])
         else:
-            print("Opção inválida!")
+            print("❌ Opção inválida")
+    
+    except KeyboardInterrupt:
+        print("\n🛑 Operação cancelada pelo usuário")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+
+def sync_repository():
+    """Sincroniza repositório"""
+    print("\n🔄 SINCRONIZANDO REPOSITÓRIO")
+    print("="*40)
+    
+    try:
+        import subprocess
+        subprocess.run([sys.executable, "sync_repository.py"])
+    except KeyboardInterrupt:
+        print("\n🛑 Operação cancelada pelo usuário")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+
+def main():
+    """Função principal"""
+    print("🚀 Iniciando sistema de download de playlists...")
+    
+    # Configura interrupção graciosa
+    reset_interrupt()
+    
+    try:
+        while True:
+            show_menu()
+            choice = get_user_choice()
+            
+            if choice == 0:
+                print("\n👋 Encerrando sistema...")
+                break
+            elif choice == 1:
+                sync_youtube_data()
+            elif choice == 2:
+                update_playlists()
+            elif choice == 3:
+                update_playlist_videos()
+            elif choice == 4:
+                update_individual_videos()
+            elif choice == 5:
+                list_playlists()
+            elif choice == 6:
+                download_all_playlists()
+            elif choice == 7:
+                download_specific_playlist()
+            elif choice == 8:
+                resume_downloads()
+            elif choice == 9:
+                show_statistics()
+            elif choice == 10:
+                upload_to_repository()
+            elif choice == 11:
+                sync_repository()
+            
+            if choice != 0:
+                input("\nPressione Enter para continuar...")
+    
+    except KeyboardInterrupt:
+        print("\n\n🛑 Sistema interrompido pelo usuário")
+    except Exception as e:
+        print(f"\n❌ Erro inesperado: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        cleanup_interrupt()
 
 if __name__ == "__main__":
     main()
